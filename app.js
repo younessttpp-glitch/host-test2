@@ -69,29 +69,32 @@ window.initGoogleSignIn = function initGoogleSignIn() {
 async function handleGoogleCredential(response) {
   const message = document.getElementById('authMsg');
   if (!response?.credential) {
-    message.textContent = 'لم يصل رمز تسجيل الدخول من Google. حاول مرة أخرى.';
+    if (message) message.textContent = 'لم يصل رمز تسجيل الدخول من Google. حاول مرة أخرى.';
     return;
   }
-  message.textContent = 'جارٍ التحقق من حساب Google...';
+
+  // Static GitHub Pages demo: read the basic profile from Google's returned ID token
+  // only to update the UI and redirect. This is NOT secure authentication because
+  // the token is not verified by a trusted backend.
   try {
-    // Do not trust or decode the token as authentication in the browser.
-    // The backend must validate it with Google and establish a secure session.
-    const data = await api('/api/google-login', {
-      method: 'POST',
-      body: JSON.stringify({ credential: response.credential })
-    });
-    me = data.user;
+    if (message) message.textContent = 'تم اختيار حساب Google، جارٍ فتح لوحة التحكم...';
+    const parts = response.credential.split('.');
+    if (parts.length < 2) throw new Error('تعذّر قراءة بيانات حساب Google.');
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4);
+    const decoded = decodeURIComponent(Array.from(atob(padded), ch => '%' + ch.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+    const profile = JSON.parse(decoded);
+    if (!profile.email) throw new Error('لم يرجع Google بريدًا إلكترونيًا للحساب.');
+
+    me = { name: profile.name || profile.given_name || profile.email, email: profile.email, picture: profile.picture || '' };
     cacheUser(me);
     updateAccountIcon(me);
     hideModal();
-    await refresh();
+    window.location.href = './account.html';
   } catch (error) {
-    message.textContent = error.message.includes('Failed to fetch') || error.message.includes('404')
-      ? 'زر Google جاهز، لكن الخادم لا يحتوي بعد على /api/google-login. GitHub Pages وحده لا يستطيع إنشاء جلسة آمنة؛ يلزم ربطه بخادم خلفي.'
-      : error.message;
+    if (message) message.textContent = error.message || 'تعذّر إكمال تسجيل الدخول باستخدام Google.';
   }
 }
-
 
 
 async function api(url, opt = {}) {
